@@ -1,5 +1,5 @@
 
-# Interdax API
+# Interdax API (**BETA**)
 - Detailed API-docs with node.js and python code examples @ https://app.interdax.com/docs  
 - A comprehensive example market-maker bot, utilizing both http and websocket API's is below
 
