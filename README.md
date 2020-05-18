@@ -11,6 +11,8 @@
 
 - _If your account is brand-new, you must create a position first.  The market-making algorithm will then use that to constantly rebalance._  
 
+- `cd examples/python && pip install -r examples/python/requirements.txt`
+
 ##### Test  
 > Runs a single market-making loop, cancels all orders and exits.  
 - `python mmbot.py -as <YOUR-API-KEY-SECRET> -ak <YOUR-API-KEY-ID> -t`   
