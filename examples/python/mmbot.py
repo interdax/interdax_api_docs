@@ -153,8 +153,7 @@ def get_orders(account_id=None, symbol=None):
     if account_id:
         params['accountId'] = account_id
     if symbol:
-        params['symbol'] = symbol
-    params['status'] = "open,partial"
+        params['symbol'] = symbol    
     orders = make_private_request('get', '/api/v1/orders', params, None)['orders']
     return dict([((e['orderId']), e) for e in orders])
 
