@@ -203,7 +203,7 @@ def on_message(ws, msg):
         o = content
         if not (o['accountId'] == TARGET_ACCOUNT_ID and o['symbol'] == TARGET_SYMBOL):
             pass  # ignore other orders
-        if o['status'] in ('open', 'partial'):
+        if o['status'] in ('open'):
             orders[o['orderId']] = o  # update open order state
         else:
             del orders[o['orderId']]  # delete inactive order
@@ -243,7 +243,7 @@ def rebalance_side(side, orders, balance, position, reference_price):
             order_already_exists = True  # leave only one order if it's close enough to target one
             continue
         else:
-            cancel_by_order_id(o['orderId'])  # cancel all remaining orders
+            cancel_all(TARGET_ACCOUNT_ID)  # cancel all remaining orders
     if not order_already_exists:  # send order if there is not
         send_limit_order(TARGET_ACCOUNT_ID, TARGET_SYMBOL, side, round(order_price / PRICE_INCREMENT) * PRICE_INCREMENT,
                          order_qty)
