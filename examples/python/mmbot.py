@@ -1,7 +1,7 @@
 import json
 import hashlib
 import hmac
-import ssl
+from pprint import pformat, pprint
 
 import requests as req
 import time
@@ -33,11 +33,16 @@ parser.add_argument('-mt', '--market-taker',
                     help='Run a market taker that maintains a consistent leverage defined by the --leverage property on a cycle defined by --delay',
                     action='store_true')
 parser.add_argument('-d', '--delay', help='Delay in seconds to run an iteration of the market maker or taker loop', default=2)
-parser.add_argument('-b', '--battle-id', help='Battle id to join')
-parser.add_argument('-bs', '--battle-stack', help='Initial amount to join the battle with')
 parser.add_argument('-p', '--position-type', help='Type of position to take', default='long', choices=['long', 'short'])
 parser.add_argument('-t', '--test', help='Run quick test of functionality', default=False, action='store_true')
 args = parser.parse_args()
+
+print('CLI args:')
+pprint(pformat(args))
+
+if os.environ.get('WEBSOCKET_CLIENT_CA_BUNDLE') is None:
+    print('ERROR: warning environment variable: WEBSOCKET_CLIENT_CA_BUNDLE is not detected, '
+          'so the websocket connection will likely fail and require installing the apt ca-certificates package.  See the Dockerfile for reference')
 
 if args.environment == "test":
     API_HOST = 'test.interdax.com'
@@ -63,8 +68,6 @@ TARGET_SPREAD = 5e-4
 PRICE_TOLERANCE = 3e-4
 
 TEST = args.test
-
-
 # endregion
 
 
@@ -99,8 +102,7 @@ def make_private_request(type, path, params, data):
     request = req.Request(method=type, url="https://" + API_HOST + url, headers=headers, data=data_json).prepare()
     resp = session.send(request)
     if resp.status_code != 200:
-        raise Exception(
-            "Endpoint " + path + " returned code " + str(resp.status_code) + " with message " + str(resp.content))
+        raise Exception("Endpoint " + path + " returned code " + str(resp.status_code) + " with message " + str(resp.content))
     return json.loads(resp.content)
 
 
@@ -285,7 +287,6 @@ def rebalance_side_maker(side, orders, balance, reference_price, position=100):
 
 
 def rebalance_side_taker(side, balance, reference_price, position=100, leverage=TARGET_LEVERAGE, leverage_tolerance=LEVERAGE_TOLERANCE_ABS):
-    # if the current leverage is outside of
     side_sign = (1 if side == 'bid' else -1)
 
     is_opposite_position_open = (position > 0 and side == 'ask') or (position < 0 and side == 'bid')
@@ -334,13 +335,14 @@ try:
 
     summaries = get_summaries()
     positions = get_positions()
+    balance = get_balance(TARGET_ACCOUNT_ID, TARGET_ASSET)
+    print(f'Starting balance of account is {balance}')
 
     if positions:
         position_quantity = int(positions[(TARGET_ACCOUNT_ID, TARGET_SYMBOL)]['quantity'])
     if positions and (position_quantity != 0):
         position = int(positions[(TARGET_ACCOUNT_ID, TARGET_SYMBOL)]['quantity'])
     else:
-        balance = get_balance(TARGET_ACCOUNT_ID, TARGET_ASSET)
         leveraged_quantity = get_leveraged_quantity(balance, TARGET_SYMBOL, TARGET_LEVERAGE)
         print(f'No positions found. Creating one with {leveraged_quantity} contracts targeting {TARGET_LEVERAGE}x leverage...')
 
