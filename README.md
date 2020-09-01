@@ -18,8 +18,11 @@
 - `python mmbot.py -as <YOUR-API-KEY-SECRET> -ak <YOUR-API-KEY-ID> -t`   
 
 ##### Run 
-> Runs the market-making infinite loop 
-- `python mmbot.py -as <YOUR-API-KEY-SECRET> -ak <YOUR-API-KEY-ID> `
+> Run a market-**making** infinite loop 
+- `python mmbot.py -as <YOUR-API-KEY-SECRET> -ak <YOUR-API-KEY-ID> --market-maker`
+
+> Run a market-**taking** loop that rebalances 50x leverage every 10 seconds
+- `python mmbot.py -as <YOUR-API-KEY-SECRET> -ak <YOUR-API-KEY-ID> --market-taker --leverage 50 --delay 10`
  
 ##### Alternatively, use the docker image 
 1.  Build - `cd examples/python && docker build . -t interdaxapi`  
