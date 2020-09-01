@@ -1,6 +1,7 @@
 import json
 import hashlib
 import hmac
+import ssl
 
 import requests as req
 import time
@@ -15,13 +16,27 @@ from urllib.parse import urlencode
 from functools import partial
 
 # region Config
+
 parser = argparse.ArgumentParser(description='Sample Interdax market making bot')
+parser.add_argument('-e', '--environment', help='Environment (test or prod) (default test)', default="test", choices=['test', 'prod'], type=str)
+parser.add_argument('-ak', '--api_key', help='API key', type=str, required=True)
+parser.add_argument('-as', '--api_secret', help='API secret', type=str, required=True)
 parser.add_argument('-s', '--symbol', help='Instrument to trade (default BTC-PERP)', default="BTC-PERP", type=str)
 parser.add_argument('-l', '--leverage', help='Target leverage (default 1)', default=1, type=float)
-parser.add_argument('-e', '--environment', help='Environment (test or prod) (default test)', default="test", type=str)
-parser.add_argument('-ak', '--api_key', help='API key', type=str)
-parser.add_argument('-as', '--api_secret', help='API secret', type=str)
-parser.add_argument('-t', '--test', help='Quick test functionality', default=False, action='store_true')
+parser.add_argument('-lt', '--leverage-tolerance-abs',
+                    help='When current and target-leverage vary by this much, then the position will be rebalanced. i.e. if target-leverage is 50, tolerance is 2 and current-leverage exceeds 50 +/- 2, rebalancing occurs',
+                    default=2, type=int)
+parser.add_argument('-mm', '--market-maker',
+                    help='Run a market maker that maintains a consistent leverage defined by the --leverage property on a cycle defined by --delay',
+                    action='store_true')
+parser.add_argument('-mt', '--market-taker',
+                    help='Run a market taker that maintains a consistent leverage defined by the --leverage property on a cycle defined by --delay',
+                    action='store_true')
+parser.add_argument('-d', '--delay', help='Delay in seconds to run an iteration of the market maker or taker loop', default=2)
+parser.add_argument('-b', '--battle-id', help='Battle id to join')
+parser.add_argument('-bs', '--battle-stack', help='Initial amount to join the battle with')
+parser.add_argument('-p', '--position-type', help='Type of position to take', default='long', choices=['long', 'short'])
+parser.add_argument('-t', '--test', help='Run quick test of functionality', default=False, action='store_true')
 args = parser.parse_args()
 
 if args.environment == "test":
@@ -31,16 +46,25 @@ elif args.environment == "prod":
 else:
     API_HOST = args.environment
 
+if args.market_maker is None and args.market_taker is None:
+    print('ERROR: must specify either --market-maker or --market-taker')
+    os.exit(1)
+
 API_KEY_ID = args.api_key
 API_KEY_SECRET = args.api_secret
 TARGET_SYMBOL = args.symbol
 TARGET_LEVERAGE = args.leverage
+DELAY = args.delay
+POSITION_TYPE = args.position_type
+LEVERAGE_TOLERANCE_ABS = args.leverage_tolerance_abs
 
 POSITION_TOLERANCE = 0.3
 TARGET_SPREAD = 5e-4
 PRICE_TOLERANCE = 3e-4
 
 TEST = args.test
+
+
 # endregion
 
 
@@ -126,14 +150,20 @@ def get_margins(account_id=None, asset=None):
     return dict([((e['accountId'], e['asset']), e) for e in margins])
 
 
-def get_position(account_id=None, symbol=None):
+def get_positions(account_id=None, symbol=None):
     params = {}
     if account_id:
         params['accountId'] = account_id
     if symbol:
         params['symbol'] = symbol
     margins = make_private_request('get', '/api/v1/positions', params, None)['positions']
-    return dict([((e['accountId'], e['symbol']), e) for e in margins])
+    positions = None
+    try:
+        positions = dict([((e['accountId'], e['symbol']), e) for e in margins])
+    except Exception as e:
+        print("Unexpected error:", sys.exc_info()[0], file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+    return positions
 
 
 def get_order_history(account_id=None, symbol=None, status=None):
@@ -153,7 +183,7 @@ def get_orders(account_id=None, symbol=None):
     if account_id:
         params['accountId'] = account_id
     if symbol:
-        params['symbol'] = symbol    
+        params['symbol'] = symbol
     orders = make_private_request('get', '/api/v1/orders', params, None)['orders']
     return dict([((e['orderId']), e) for e in orders])
 
@@ -164,7 +194,7 @@ def cancel_all(account_id):
     return make_private_request('delete', '/api/v1/order/all', params, None)
 
 
-def send_order(account_id, symbol, type, side, qty, px=None, post_only=False):
+def send_order(account_id, symbol, type, side, qty, px=None, post_only=None):
     data = {'accountId': account_id, 'symbol': symbol, 'orderSide': side, 'orderType': type, 'orderQuantity': str(qty)}
     if px:
         data['limitPrice'] = str(px)
@@ -173,8 +203,12 @@ def send_order(account_id, symbol, type, side, qty, px=None, post_only=False):
     return make_private_request('post', '/api/v1/order', None, data)['response']
 
 
-def send_limit_order(account_id, symbol, side, px, qty, post_only=False):
+def send_limit_order(account_id, symbol, side, px, qty, post_only=True):
     return send_order(account_id, symbol, "limit", side, qty, px, post_only)
+
+
+def send_market_order(account_id, symbol, side, qty):
+    return send_order(account_id, symbol, "market", side, qty)
 
 
 def cancel_by_order_id(order_id):
@@ -203,7 +237,7 @@ def on_message(ws, msg):
         o = content
         if not (o['accountId'] == TARGET_ACCOUNT_ID and o['symbol'] == TARGET_SYMBOL):
             pass  # ignore other orders
-        if o['status'] in ('open'):
+        if o['status'] in ('open', 'partial'):
             orders[o['orderId']] = o  # update open order state
         else:
             del orders[o['orderId']]  # delete inactive order
@@ -212,8 +246,9 @@ def on_message(ws, msg):
 def on_error(ws, error):
     print('ERROR: Websocket' + str(error))
 
+
 def on_close(ws):
-    print('Websocket closed.  Websocket functionality is a critical dependency.  Exiting program ...')
+    print('Websocket closed.  Websocket functionality is a critical dependency.  Exiting ...')
     os._exit(1)
 
 
@@ -229,7 +264,7 @@ def on_public_open(ws):
     ws.send(str('["subscribe", "summaries"]'))
 
 
-def rebalance_side(side, orders, balance, position, reference_price):
+def rebalance_side_maker(side, orders, balance, reference_price, position=100):
     side_sign = (1 if side == 'bid' else -1)
     target_position = TARGET_LEVERAGE * (balance * reference_price)
     order_qty = round(min(2 * target_position, max(MIN_QTY, target_position - position * side_sign)))
@@ -249,6 +284,40 @@ def rebalance_side(side, orders, balance, position, reference_price):
                          order_qty)
 
 
+def rebalance_side_taker(side, balance, reference_price, position=100, leverage=TARGET_LEVERAGE, leverage_tolerance=LEVERAGE_TOLERANCE_ABS):
+    # if the current leverage is outside of
+    side_sign = (1 if side == 'bid' else -1)
+
+    is_opposite_position_open = (position > 0 and side == 'ask') or (position < 0 and side == 'bid')
+    if is_opposite_position_open:
+        print('WARNING: rebalancing the currently open position to the opposite side.')
+
+    min_leverage = leverage - leverage_tolerance
+    max_leverage = leverage + leverage_tolerance
+    current_leverage = abs(position / (balance * reference_price))
+
+    if (current_leverage < min_leverage) or (current_leverage > max_leverage) or is_opposite_position_open:
+        target_position = (leverage * (balance * reference_price)) * side_sign
+        position_delta = round(target_position - position)
+        order_qty = abs(position_delta)
+        if position_delta >= 0:
+            new_side = 'bid'
+        else:
+            new_side = 'ask'
+        send_market_order(TARGET_ACCOUNT_ID, TARGET_SYMBOL, new_side, order_qty)
+
+
+def get_leveraged_quantity(balance, symbol=args.symbol, leverage=args.leverage):
+    balance = balance or get_balance()
+    summaries = get_summaries()
+    return int((float(summaries[symbol]['markPrice']) * balance) * leverage)
+
+
+def get_balance(account_id, asset):
+    margins = get_margins()
+    return float(margins[(account_id, asset)]['marketValue'])
+
+
 try:
 
     print("Initializing...")
@@ -264,34 +333,72 @@ try:
     TARGET_ACCOUNT_ID = get_accounts()['Main']['id']  # determine account_id to trade in
 
     summaries = get_summaries()
-    positions = get_position()
+    positions = get_positions()
+
+    if positions:
+        position_quantity = int(positions[(TARGET_ACCOUNT_ID, TARGET_SYMBOL)]['quantity'])
+    if positions and (position_quantity != 0):
+        position = int(positions[(TARGET_ACCOUNT_ID, TARGET_SYMBOL)]['quantity'])
+    else:
+        balance = get_balance(TARGET_ACCOUNT_ID, TARGET_ASSET)
+        leveraged_quantity = get_leveraged_quantity(balance, TARGET_SYMBOL, TARGET_LEVERAGE)
+        print(f'No positions found. Creating one with {leveraged_quantity} contracts targeting {TARGET_LEVERAGE}x leverage...')
+
+        send_market_order(TARGET_ACCOUNT_ID, TARGET_SYMBOL, 'ask', leveraged_quantity)
+        time.sleep(3)
+        positions = get_positions()
+        position = int(positions[(TARGET_ACCOUNT_ID, TARGET_SYMBOL)]['quantity'])
+
     margins = get_margins()
     orders = get_orders(TARGET_ACCOUNT_ID, TARGET_SYMBOL)
-
     print("Running market-maker loop")
 
-    def make_market():
+
+    def market_make(delay=DELAY):
+        # updates to all variables within this function will happen over WS (margins, positions etc..)
         try:
             balance = float(margins[(TARGET_ACCOUNT_ID, TARGET_ASSET)]['marketValue'])
             position = int(positions[(TARGET_ACCOUNT_ID, TARGET_SYMBOL)]['quantity'])
             reference_price = float(summaries[TARGET_SYMBOL]['markPrice'])
-            rebalance_side('bid', orders.copy(), balance, position, reference_price)
-            rebalance_side('ask', orders.copy(), balance, position, reference_price)
+            rebalance_side_maker('bid', orders.copy(), balance, reference_price, position)
+            rebalance_side_maker('ask', orders.copy(), balance, reference_price, position)
         except Exception as e:
             print("Unexpected error:", sys.exc_info()[0], file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
         finally:
-            time.sleep(2)
+            time.sleep(delay)
+
+
+    def market_take(position_type='long', leverage=TARGET_LEVERAGE, update_cycle=DELAY):
+        # updates to all variables within this function will happen over WS (margins, positions etc..)
+        try:
+            side = 'bid' if position_type.lower() == 'long' else 'ask'
+            balance = float(margins[(TARGET_ACCOUNT_ID, TARGET_ASSET)]['marketValue'])
+            position = int(positions[(TARGET_ACCOUNT_ID, TARGET_SYMBOL)]['quantity'])
+            reference_price = float(summaries[TARGET_SYMBOL]['markPrice'])
+            rebalance_side_taker(side, balance, reference_price, position, leverage=leverage, leverage_tolerance=LEVERAGE_TOLERANCE_ABS)
+        except Exception as e:
+            print("Unexpected error:", sys.exc_info()[0], file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+        finally:
+            time.sleep(update_cycle)
+
 
     if TEST:
         print('Testing single loop...')
-        make_market()
+        if args.market_maker:
+            market_make()
+        if args.market_taker:
+            market_take(position_type=POSITION_TYPE, leverage=TARGET_LEVERAGE, update_cycle=DELAY)
         cancel_all(TARGET_ACCOUNT_ID)
         print('Test passed.  Exiting.')
         os._exit(0)
     else:
         while True:
-            make_market()
+            if args.market_maker:
+                market_make()
+            if args.market_taker:
+                market_take(position_type=POSITION_TYPE, leverage=TARGET_LEVERAGE, update_cycle=DELAY)
 
 except KeyboardInterrupt:
     print('Interrupted with keyboard signal')
