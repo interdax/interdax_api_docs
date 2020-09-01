@@ -11,6 +11,7 @@
 
 - Install required python modules
   - `cd examples/python && pip install -r examples/python/requirements.txt`
+- Refer to the [Dockerfile](examples/python/Dockerfile) for any other setup needs
 
 ##### Test  
 > Runs a single market-making loop, cancels all orders and exits.  
