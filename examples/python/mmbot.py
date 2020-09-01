@@ -16,13 +16,13 @@ from urllib.parse import urlencode
 from functools import partial
 
 # region Config
-
 parser = argparse.ArgumentParser(description='Sample Interdax market making bot')
 parser.add_argument('-e', '--environment', help='Environment (test or prod) (default test)', default="test", choices=['test', 'prod'], type=str)
 parser.add_argument('-ak', '--api_key', help='API key', type=str, required=True)
 parser.add_argument('-as', '--api_secret', help='API secret', type=str, required=True)
 parser.add_argument('-s', '--symbol', help='Instrument to trade (default BTC-PERP)', default="BTC-PERP", type=str)
 parser.add_argument('-l', '--leverage', help='Target leverage (default 1)', default=1, type=float)
+parser.add_argument('-a', '--account-id', help='Account ID to use for orders.  If none specified, the main account will be used', default='5982672856660698465')
 parser.add_argument('-lt', '--leverage-tolerance-abs',
                     help='When current and target-leverage vary by this much, then the position will be rebalanced. i.e. if target-leverage is 50, tolerance is 2 and current-leverage exceeds 50 +/- 2, rebalancing occurs',
                     default=2, type=int)
@@ -331,7 +331,10 @@ try:
     TARGET_ASSET = INSTRUMENTS[TARGET_SYMBOL]['sellAssetSymbol']
     PRICE_INCREMENT = INSTRUMENTS[TARGET_SYMBOL]['priceIncrement']
     MIN_QTY = INSTRUMENTS[TARGET_SYMBOL]['quantityMin']
-    TARGET_ACCOUNT_ID = get_accounts()['Main']['id']  # determine account_id to trade in
+
+    TARGET_ACCOUNT_ID = args.account_id
+    if TARGET_ACCOUNT_ID is None:
+        TARGET_ACCOUNT_ID = get_accounts()['Main']['id']  # determine account_id to trade in
 
     summaries = get_summaries()
     positions = get_positions()
