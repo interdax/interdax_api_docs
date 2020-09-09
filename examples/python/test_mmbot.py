@@ -9,18 +9,16 @@ def bash_cmd(cmd='ls'):
 
 
 class TestBot(unittest.TestCase):
-    
-    test_args = ["python",
-                 "mmbot.py",
-                 "-as", os.environ['API_KEY_SECRET'],
-                 "-ak", os.environ['API_KEY_ID'],
-                 "-t",
-                 "--market-maker"
-                 ]
-
+  
     @classmethod
     def setUpClass(cls):
-
+        cls.test_args = ["python",
+                     "mmbot.py",
+                     "-as", os.environ['API_KEY_SECRET'],
+                     "-ak", os.environ['API_KEY_ID'],
+                     "-t",
+                     "--market-maker"
+                     ]
         if 'TEST' in os.environ.keys():
             print(os.environ['TEST'])
             if os.environ['TEST'] == 'true':
