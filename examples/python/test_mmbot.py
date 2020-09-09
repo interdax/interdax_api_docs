@@ -1,15 +1,9 @@
 import unittest
 import os
-
-
-def bash_cmd(cmd='ls'):
-    with os.popen(cmd) as do:
-        output = do.read()
-        return output
-
+import subprocess
 
 class TestBot(unittest.TestCase):
-  
+
     @classmethod
     def setUpClass(cls):
         cls.test_args = ["python",
@@ -25,9 +19,8 @@ class TestBot(unittest.TestCase):
                 cls.test_args.append("-t")
 
     def test_market_maker(self):
-        r = bash_cmd(' '.join(self.test_args))
-        print(r)
-        self.assertIn('Test passed', r)
+        r = subprocess.run(self.test_args)
+        self.assertEqual(r.returncode, 0)
 
 
 if __name__ == '__main__':
