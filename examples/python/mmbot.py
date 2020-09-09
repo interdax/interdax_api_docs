@@ -370,6 +370,7 @@ try:
         except Exception as e:
             print("Unexpected error:", sys.exc_info()[0], file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
+            os.exit(1)
         finally:
             time.sleep(delay)
 
@@ -385,6 +386,7 @@ try:
         except Exception as e:
             print("Unexpected error:", sys.exc_info()[0], file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
+            os.exit(1)
         finally:
             time.sleep(update_cycle)
 
