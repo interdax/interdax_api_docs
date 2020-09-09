@@ -1,4 +1,3 @@
-import subprocess
 import unittest
 import os
 
@@ -6,7 +5,8 @@ test_args = ["python",
              "mmbot.py",
              "-as", os.environ['API_KEY_SECRET'],
              "-ak", os.environ['API_KEY_ID'],
-             "-t"
+             "-t",
+             "--market-maker"
              ]
 
 if 'TEST' in os.environ.keys():
@@ -14,11 +14,15 @@ if 'TEST' in os.environ.keys():
     if os.environ['TEST'] == 'true':
         test_args.append("-t")
 
+def bash_cmd(cmd='ls'):
+    with os.popen(cmd) as do:
+        output = do.read()
+        return output
 
 class TestBot(unittest.TestCase):
-    def test_something(self):
-        r = subprocess.run(test_args)
-        self.assertEqual(r.returncode, 0)
+    def test_market_maker(self):
+        r = bash_cmd(' '.join(self.test_args))
+        self.assertIn('Test passed', r)
 
 
 if __name__ == '__main__':
