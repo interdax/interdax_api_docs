@@ -21,7 +21,7 @@ def bash_cmd(cmd='ls'):
 
 class TestBot(unittest.TestCase):
     def test_market_maker(self):
-        r = bash_cmd(' '.join(self.test_args))
+        r = bash_cmd(' '.join(test_args))
         self.assertIn('Test passed', r)
 
 
